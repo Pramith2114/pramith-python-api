@@ -394,9 +394,372 @@ class VendorOrderResponse(VendorOrderBase):
         from_attributes = True
 
 
+
 class VendorOrderDetailResponse(VendorOrderResponse):
     """Extended vendor order response with vendor details"""
     vendor: Optional[VendorResponse] = None
     
     class Config:
         from_attributes = True
+
+
+# ============================================================
+# Appointment Schemas (new)
+# ============================================================
+
+class AppointmentBase(BaseModel):
+    """Base appointment schema"""
+    patient_id: UUID = Field(..., description="UUID of the patient")
+    doctor_id: UUID = Field(..., description="UUID of the doctor")
+    appointment_date: str = Field(..., description="Appointment date (YYYY-MM-DD)")
+    time_slot: str = Field(..., description="Time slot (e.g., 09:00-09:30)")
+    status: str = Field(..., description="Appointment status: scheduled, completed, cancelled, no-show, rescheduled")
+    notes: Optional[str] = Field(None, description="Additional notes about appointment")
+
+
+class AppointmentCreate(BaseModel):
+    """Schema for creating an appointment"""
+    patient_id: UUID = Field(..., description="UUID of the patient")
+    doctor_id: UUID = Field(..., description="UUID of the doctor")
+    appointment_date: str = Field(..., description="Appointment date (YYYY-MM-DD)")
+    time_slot: str = Field(..., description="Time slot (e.g., 09:00-09:30)")
+    status: str = Field(default="scheduled", description="Appointment status (default: scheduled)")
+    notes: Optional[str] = Field(None, description="Additional notes about appointment")
+
+
+class AppointmentUpdate(BaseModel):
+    """Schema for updating an appointment"""
+    appointment_date: Optional[str] = None
+    time_slot: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class AppointmentResponse(AppointmentBase):
+    """Schema for appointment response"""
+    id: UUID
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class AppointmentDetailResponse(AppointmentResponse):
+    """Extended appointment response with patient and doctor details"""
+    patient: Optional[UserResponse] = None
+    doctor: Optional[DoctorResponse] = None
+    
+    class Config:
+        from_attributes = True
+
+
+# ============================================================
+# Prescription Schemas
+# ============================================================
+
+class PrescriptionItemBase(BaseModel):
+    """Base prescription item schema"""
+    drug_id: UUID = Field(..., description="UUID of the drug")
+    dosage: str = Field(..., description="Drug dosage (e.g., 500mg, 10ml)")
+    duration: str = Field(..., description="Duration (e.g., 7 days, 2 weeks)")
+    instructions: Optional[str] = Field(None, description="Usage instructions")
+
+
+class PrescriptionItemCreate(BaseModel):
+    """Schema for creating a prescription item"""
+    drug_id: UUID = Field(..., description="UUID of the drug")
+    dosage: str = Field(..., description="Drug dosage (e.g., 500mg, 10ml)")
+    duration: str = Field(..., description="Duration (e.g., 7 days, 2 weeks)")
+    instructions: Optional[str] = Field(None, description="Usage instructions")
+
+
+class PrescriptionItemResponse(PrescriptionItemBase):
+    """Schema for prescription item response"""
+    id: UUID
+    prescription_id: UUID
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class PrescriptionBase(BaseModel):
+    """Base prescription schema"""
+    appointment_id: UUID = Field(..., description="UUID of the appointment")
+    doctor_id: UUID = Field(..., description="UUID of the doctor")
+    patient_id: UUID = Field(..., description="UUID of the patient")
+    notes: Optional[str] = Field(None, description="Additional prescription notes")
+
+
+class PrescriptionCreate(BaseModel):
+    """Schema for creating a prescription"""
+    appointment_id: UUID = Field(..., description="UUID of the appointment")
+    doctor_id: UUID = Field(..., description="UUID of the doctor")
+    patient_id: UUID = Field(..., description="UUID of the patient")
+    notes: Optional[str] = Field(None, description="Additional prescription notes")
+    items: Optional[list[PrescriptionItemCreate]] = Field(None, description="Prescription items")
+
+
+class PrescriptionUpdate(BaseModel):
+    """Schema for updating a prescription"""
+    notes: Optional[str] = None
+
+
+class PrescriptionResponse(PrescriptionBase):
+    """Schema for prescription response"""
+    id: UUID
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class PrescriptionDetailResponse(PrescriptionResponse):
+    """Extended prescription response with related items and details"""
+    items: Optional[list[PrescriptionItemResponse]] = None
+    
+    class Config:
+        from_attributes = True
+
+
+# ============================================================
+# Medical Records Schemas
+# ============================================================
+
+class MedicalRecordBase(BaseModel):
+    """Base medical record schema"""
+    patient_id: UUID = Field(..., description="UUID of the patient")
+    file_url: str = Field(..., description="URL to the medical record file")
+    record_type: str = Field(..., description="Type of record (lab_report, x_ray, prescription, discharge_summary, etc.)")
+    description: Optional[str] = Field(None, description="Description or notes about the record")
+
+
+class MedicalRecordCreate(BaseModel):
+    """Schema for creating a medical record"""
+    patient_id: UUID = Field(..., description="UUID of the patient")
+    file_url: str = Field(..., description="URL to the medical record file")
+    record_type: str = Field(..., description="Type of record (lab_report, x_ray, prescription, discharge_summary, etc.)")
+    description: Optional[str] = Field(None, description="Description or notes about the record")
+
+
+class MedicalRecordUpdate(BaseModel):
+    """Schema for updating a medical record"""
+    file_url: Optional[str] = None
+    record_type: Optional[str] = None
+    description: Optional[str] = None
+
+
+class MedicalRecordResponse(MedicalRecordBase):
+    """Schema for medical record response"""
+    id: UUID
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+# ==================== PAYMENT SCHEMAS ====================
+
+class PaymentBase(BaseModel):
+    """Base schema for payment"""
+    user_id: UUID = Field(..., description="UUID of the user making the payment")
+    amount: Decimal = Field(..., description="Payment amount")
+    payment_method: str = Field(..., description="Payment method (credit_card, debit_card, upi, bank_transfer, etc.)")
+    payment_status: str = Field(default='pending', description="Payment status (pending, completed, failed, refunded)")
+    transaction_id: str = Field(..., description="Unique transaction identifier")
+
+
+class PaymentCreate(BaseModel):
+    """Schema for creating a payment"""
+    user_id: UUID = Field(..., description="UUID of the user making the payment")
+    amount: Decimal = Field(..., description="Payment amount")
+    payment_method: str = Field(..., description="Payment method (credit_card, debit_card, upi, bank_transfer, etc.)")
+    transaction_id: str = Field(..., description="Unique transaction identifier")
+
+
+class PaymentUpdate(BaseModel):
+    """Schema for updating a payment"""
+    payment_status: Optional[str] = None
+    amount: Optional[Decimal] = None
+    payment_method: Optional[str] = None
+
+
+class PaymentResponse(PaymentBase):
+    """Schema for payment response"""
+    id: UUID
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+# ==================== INVOICE SCHEMAS ====================
+
+class InvoiceItemBase(BaseModel):
+    """Base schema for invoice item"""
+    item_type: str = Field(..., description="Type of item (drug, consultation, service, etc.)")
+    item_id: UUID = Field(..., description="UUID of the specific item")
+    quantity: int = Field(default=1, description="Quantity of items")
+    price: Decimal = Field(..., description="Unit price of item")
+
+
+class InvoiceItemCreate(BaseModel):
+    """Schema for creating an invoice item"""
+    item_type: str = Field(..., description="Type of item (drug, consultation, service, etc.)")
+    item_id: UUID = Field(..., description="UUID of the specific item")
+    quantity: int = Field(default=1, description="Quantity of items")
+    price: Decimal = Field(..., description="Unit price of item")
+
+
+class InvoiceItemUpdate(BaseModel):
+    """Schema for updating an invoice item"""
+    item_type: Optional[str] = None
+    item_id: Optional[UUID] = None
+    quantity: Optional[int] = None
+    price: Optional[Decimal] = None
+
+
+class InvoiceItemResponse(InvoiceItemBase):
+    """Schema for invoice item response"""
+    id: UUID
+    invoice_id: UUID
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class InvoiceBase(BaseModel):
+    """Base schema for invoice"""
+    user_id: UUID = Field(..., description="UUID of the user")
+    total_amount: Decimal = Field(..., description="Total invoice amount")
+    status: str = Field(default='draft', description="Invoice status (draft, issued, paid, overdue, cancelled)")
+
+
+class InvoiceCreate(BaseModel):
+    """Schema for creating an invoice"""
+    user_id: UUID = Field(..., description="UUID of the user")
+    total_amount: Decimal = Field(..., description="Total invoice amount")
+
+
+class InvoiceUpdate(BaseModel):
+    """Schema for updating an invoice"""
+    status: Optional[str] = None
+    total_amount: Optional[Decimal] = None
+
+
+class InvoiceResponse(InvoiceBase):
+    """Schema for invoice response"""
+    id: UUID
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class InvoiceDetailResponse(InvoiceBase):
+    """Schema for detailed invoice response with items"""
+    id: UUID
+    items: list[InvoiceItemResponse] = []
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class NotificationBase(BaseModel):
+    """Base schema for notification"""
+    user_id: UUID = Field(..., description="UUID of the user")
+    title: str = Field(..., description="Notification title")
+    message: str = Field(..., description="Notification message content")
+    type: str = Field(..., description="Notification type (alert, info, warning, success, error)")
+
+
+class NotificationCreate(NotificationBase):
+    """Schema for creating a notification"""
+    pass
+
+
+class NotificationUpdate(BaseModel):
+    """Schema for updating a notification"""
+    title: Optional[str] = None
+    message: Optional[str] = None
+    type: Optional[str] = None
+    is_read: Optional[bool] = None
+
+
+class NotificationResponse(NotificationBase):
+    """Schema for notification response"""
+    id: UUID
+    is_read: bool
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class SearchLogBase(BaseModel):
+    """Base schema for search log"""
+    user_id: UUID = Field(..., description="UUID of the user")
+    query: str = Field(..., description="Search query text")
+    results_count: int = Field(default=0, description="Number of results returned")
+
+
+class SearchLogCreate(SearchLogBase):
+    """Schema for creating a search log"""
+    pass
+
+
+class SearchLogUpdate(BaseModel):
+    """Schema for updating a search log"""
+    results_count: Optional[int] = None
+
+
+class SearchLogResponse(SearchLogBase):
+    """Schema for search log response"""
+    id: UUID
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class SymptomCheckerBase(BaseModel):
+    """Base schema for symptom checker"""
+    symptoms: str = Field(..., description="Comma-separated symptoms or symptom description")
+    suggested_disease: str = Field(..., description="Disease suggestion based on symptoms")
+    confidence_score: Decimal = Field(..., description="Confidence score (0.00-1.00)")
+
+
+class SymptomCheckerCreate(SymptomCheckerBase):
+    """Schema for creating a symptom checker record"""
+    pass
+
+
+class SymptomCheckerUpdate(BaseModel):
+    """Schema for updating a symptom checker record"""
+    symptoms: Optional[str] = None
+    suggested_disease: Optional[str] = None
+    confidence_score: Optional[Decimal] = None
+
+
+class SymptomCheckerResponse(SymptomCheckerBase):
+    """Schema for symptom checker response"""
+    id: UUID
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+

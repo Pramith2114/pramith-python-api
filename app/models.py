@@ -143,6 +143,168 @@ class OTP(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class Appointment(Base):
+    """Appointment model for managing patient-doctor appointments"""
+    __tablename__ = "appointments"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    patient_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    doctor_id = Column(UUID(as_uuid=True), ForeignKey("doctors.id"), nullable=False, index=True)
+    appointment_date = Column(Date, nullable=False, index=True)
+    time_slot = Column(String(50), nullable=False)  # e.g., 09:00-09:30, 10:00-10:30
+    status = Column(String(50), nullable=False, default='scheduled')  # scheduled, completed, cancelled, no-show, rescheduled
+    notes = Column(Text, nullable=True)  # Additional notes about appointment
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    __table_args__ = (
+        CheckConstraint("status IN ('scheduled', 'completed', 'cancelled', 'no-show', 'rescheduled')", name='valid_appointment_status'),
+    )
+
+
+class Prescription(Base):
+    """Prescription model for managing drug prescriptions"""
+    __tablename__ = "prescriptions"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    appointment_id = Column(UUID(as_uuid=True), ForeignKey("appointments.id"), nullable=False, index=True)
+    doctor_id = Column(UUID(as_uuid=True), ForeignKey("doctors.id"), nullable=False, index=True)
+    patient_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    notes = Column(Text, nullable=True)  # Additional prescription notes
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class PrescriptionItem(Base):
+    """Prescription items model for storing individual drugs in a prescription"""
+    __tablename__ = "prescription_items"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    prescription_id = Column(UUID(as_uuid=True), ForeignKey("prescriptions.id"), nullable=False, index=True)
+    drug_id = Column(UUID(as_uuid=True), ForeignKey("drugs.id"), nullable=False, index=True)
+    dosage = Column(String(100), nullable=False)  # e.g., "500mg", "10ml"
+    duration = Column(String(100), nullable=False)  # e.g., "7 days", "2 weeks"
+    instructions = Column(Text, nullable=True)  # e.g., "Take twice daily after meals"
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class MedicalRecord(Base):
+    """Medical records model for storing patient medical documents"""
+    __tablename__ = "medical_records"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    patient_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    file_url = Column(Text, nullable=False)  # URL to the uploaded file
+    record_type = Column(String(100), nullable=False, index=True)  # e.g., lab_report, x_ray, prescription, discharge_summary
+    description = Column(Text, nullable=True)  # Description or notes about the record
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Payment(Base):
+    """Payment model for managing payment transactions"""
+    __tablename__ = "payments"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    amount = Column(Numeric(12, 2), nullable=False)  # Payment amount with 2 decimal places
+    payment_method = Column(String(50), nullable=False, index=True)  # credit_card, debit_card, upi, bank_transfer, etc.
+    payment_status = Column(String(50), nullable=False, default='pending', index=True)  # pending, completed, failed, refunded
+    transaction_id = Column(String(255), unique=True, nullable=False, index=True)  # Unique transaction ID
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    __table_args__ = (
+        CheckConstraint("payment_status IN ('pending', 'completed', 'failed', 'refunded')", name='valid_payment_status'),
+    )
+
+
+class Invoice(Base):
+    """Invoice model for managing invoices"""
+    __tablename__ = "invoices"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    total_amount = Column(Numeric(12, 2), nullable=False)  # Total invoice amount with 2 decimal places
+    status = Column(String(50), nullable=False, default='draft', index=True)  # draft, issued, paid, overdue, cancelled
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    __table_args__ = (
+        CheckConstraint("status IN ('draft', 'issued', 'paid', 'overdue', 'cancelled')", name='valid_invoice_status'),
+    )
+
+
+class InvoiceItem(Base):
+    """Invoice items model for line items in invoices"""
+    __tablename__ = "invoice_items"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    invoice_id = Column(UUID(as_uuid=True), ForeignKey("invoices.id"), nullable=False, index=True)
+    item_type = Column(String(50), nullable=False)  # drug, consultation, service, etc.
+    item_id = Column(UUID(as_uuid=True), nullable=False, index=True)  # UUID reference to the actual item
+    quantity = Column(Integer, nullable=False, default=1)  # Quantity of items
+    price = Column(Numeric(12, 2), nullable=False)  # Unit price of item
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Notification(Base):
+    """Notification model for managing user notifications"""
+    __tablename__ = "notifications"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    title = Column(String(255), nullable=False)  # Notification title
+    message = Column(Text, nullable=False)  # Notification message content
+    type = Column(String(50), nullable=False, index=True)  # alert, info, warning, success, error
+    is_read = Column(Boolean, default=False, index=True)  # Read status
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    __table_args__ = (
+        CheckConstraint("type IN ('alert', 'info', 'warning', 'success', 'error')", name='valid_notification_type'),
+    )
+
+
+class SearchLog(Base):
+    """Search logs model for tracking user searches"""
+    __tablename__ = "search_logs"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    query = Column(Text, nullable=False)  # Search query text
+    results_count = Column(Integer, nullable=False, default=0)  # Number of results returned
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SymptomChecker(Base):
+    """Symptom checker model for tracking symptoms and suggested diseases"""
+    __tablename__ = "symptom_checkers"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    symptoms = Column(Text, nullable=False)  # Comma-separated symptoms
+    suggested_disease = Column(Text, nullable=False)  # Disease suggestion
+    confidence_score = Column(Numeric(3, 2), nullable=False)  # Confidence 0.00-1.00
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class OTPVerification(Base):
+    """OTP Verification model for managing one-time passwords"""
+    __tablename__ = "otp_verifications"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    mobile = Column(String(20), nullable=False, index=True)  # Mobile phone number
+    otp = Column(String(10), nullable=False)  # One-time password
+    expires_at = Column(DateTime, nullable=False, index=True)  # Expiration timestamp
+    is_verified = Column(Boolean, default=False, index=True)  # Verification status
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class Item(Base):
     """Item model example"""
     __tablename__ = "items"
