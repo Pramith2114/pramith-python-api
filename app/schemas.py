@@ -117,6 +117,56 @@ class UserOTPSignup(BaseModel):
     username: Optional[str] = None
 
 
+# ============================================================
+# OTP Verification Schemas
+# ============================================================
+
+class OTPVerificationCreate(BaseModel):
+    """Schema for creating OTP verification record"""
+    mobile: str = Field(..., description="Mobile phone number")
+    otp: str = Field(..., description="One-time password")
+    expires_at: datetime = Field(..., description="OTP expiration timestamp")
+
+
+class OTPVerificationUpdate(BaseModel):
+    """Schema for updating OTP verification record"""
+    otp: Optional[str] = None
+    expires_at: Optional[datetime] = None
+    is_verified: Optional[bool] = None
+
+
+class OTPVerificationResponse(BaseModel):
+    """Schema for OTP verification response"""
+    id: UUID
+    mobile: str
+    otp: str
+    expires_at: datetime
+    is_verified: bool
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class OTPVerificationRequest(BaseModel):
+    """Schema for requesting OTP verification"""
+    mobile: str = Field(..., pattern=r"^\+?1?\d{9,15}$", description="Mobile phone number")
+
+
+class OTPVerificationCheckRequest(BaseModel):
+    """Schema for checking/verifying OTP"""
+    mobile: str = Field(..., description="Mobile phone number")
+    otp: str = Field(..., description="One-time password to verify")
+
+
+class OTPVerificationCheckResponse(BaseModel):
+    """Schema for OTP verification check response"""
+    success: bool
+    message: str
+    is_verified: bool
+
+
 class MessageResponse(BaseModel):
     """Generic message response"""
     message: str

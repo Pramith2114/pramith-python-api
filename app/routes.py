@@ -1,14 +1,14 @@
 """
 API routes for users, doctors, items, and drugs
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Body
 from sqlalchemy.orm import Session
 from uuid import UUID
 from datetime import datetime
 import bcrypt
 
 from app.database import get_db
-from app.models import User, Item, Doctor, DoctorDocument, Drug, StockTransaction, Vendor, VendorOrder, Appointment, Prescription, PrescriptionItem, MedicalRecord, Payment, Invoice, InvoiceItem, Notification, SearchLog, SymptomChecker
+from app.models import User, Item, Doctor, DoctorDocument, Drug, StockTransaction, Vendor, VendorOrder, Appointment, Prescription, PrescriptionItem, MedicalRecord, Payment, Invoice, InvoiceItem, Notification, SearchLog, SymptomChecker, OTPVerification
 from app.schemas import (
     UserCreate, UserResponse, UserUpdate, UserInDB, 
     ItemCreate, ItemResponse,
@@ -27,7 +27,8 @@ from app.schemas import (
     InvoiceItemCreate, InvoiceItemResponse, InvoiceItemUpdate,
     NotificationCreate, NotificationResponse, NotificationUpdate,
     SearchLogCreate, SearchLogResponse, SearchLogUpdate,
-    SymptomCheckerCreate, SymptomCheckerResponse, SymptomCheckerUpdate
+    SymptomCheckerCreate, SymptomCheckerResponse, SymptomCheckerUpdate,
+    OTPVerificationCreate, OTPVerificationResponse, OTPVerificationUpdate, OTPVerificationRequest, OTPVerificationCheckRequest, OTPVerificationCheckResponse
 )
 
 # ============================================================
@@ -2569,7 +2570,7 @@ payments_router = APIRouter(prefix="/api/payments", tags=["payments"])
 
 @payments_router.post("", response_model=PaymentResponse, status_code=status.HTTP_201_CREATED)
 async def create_payment(
-    payment: PaymentCreate,
+    payment: PaymentCreate = Body(...),
     db: Session = Depends(get_db),
 ):
     """
@@ -3595,6 +3596,201 @@ async def delete_symptom_checker(
     db.commit()
 
 
+# ============================================================
+# OTP Verification Router
+# ============================================================
+
+otp_verification_router = APIRouter(prefix="/api/otp-verification", tags=["otp_verification"])
+
+
+@otp_verification_router.post("", response_model=OTPVerificationResponse, status_code=status.HTTP_201_CREATED)
+async def create_otp_verification(
+    otp_data: OTPVerificationCreate,
+    db: Session = Depends(get_db),
+):
+    """
+    Create a new OTP verification record
+    
+    - **mobile**: Mobile phone number
+    - **otp**: One-time password
+    - **expires_at**: OTP expiration timestamp
+    """
+    # Check if there's already an active OTP for this mobile
+    existing_otp = db.query(OTPVerification).filter(
+        OTPVerification.mobile == otp_data.mobile,
+        OTPVerification.expires_at > datetime.utcnow()
+    ).first()
+    
+    if existing_otp:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An active OTP already exists for this mobile number"
+        )
+    
+    # Create new OTP verification
+    db_otp = OTPVerification(
+        mobile=otp_data.mobile,
+        otp=otp_data.otp,
+        expires_at=otp_data.expires_at,
+        is_verified=False
+    )
+    db.add(db_otp)
+    db.commit()
+    db.refresh(db_otp)
+    return db_otp
+
+
+@otp_verification_router.get("", response_model=list[OTPVerificationResponse])
+async def get_all_otp_verifications(
+    skip: int = 0,
+    limit: int = 10,
+    mobile: str = None,
+    is_verified: bool = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Get all OTP verification records with optional filtering
+    
+    - **skip**: Number of records to skip
+    - **limit**: Maximum number of records to return
+    - **mobile**: Filter by mobile number
+    - **is_verified**: Filter by verification status
+    """
+    query = db.query(OTPVerification)
+    
+    if mobile:
+        query = query.filter(OTPVerification.mobile == mobile)
+    
+    if is_verified is not None:
+        query = query.filter(OTPVerification.is_verified == is_verified)
+    
+    return query.order_by(OTPVerification.created_at.desc()).offset(skip).limit(limit).all()
+
+
+@otp_verification_router.post("/verify", response_model=OTPVerificationCheckResponse)
+async def verify_otp(
+    verify_request: OTPVerificationCheckRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Verify an OTP for a given mobile number
+    
+    - **mobile**: Mobile phone number
+    - **otp**: One-time password to verify
+    """
+    # Find the OTP record for this mobile
+    otp_record = db.query(OTPVerification).filter(
+        OTPVerification.mobile == verify_request.mobile
+    ).order_by(OTPVerification.created_at.desc()).first()
+    
+    if not otp_record:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No OTP record found for this mobile number"
+        )
+    
+    # Check if OTP has expired
+    if otp_record.expires_at <= datetime.utcnow():
+        return OTPVerificationCheckResponse(
+            success=False,
+            message="OTP has expired",
+            is_verified=False
+        )
+    
+    # Check if OTP matches
+    if otp_record.otp != verify_request.otp:
+        return OTPVerificationCheckResponse(
+            success=False,
+            message="Invalid OTP",
+            is_verified=False
+        )
+    
+    # Mark OTP as verified
+    otp_record.is_verified = True
+    db.commit()
+    db.refresh(otp_record)
+    
+    return OTPVerificationCheckResponse(
+        success=True,
+        message="OTP verified successfully",
+        is_verified=True
+    )
+
+
+@otp_verification_router.get("/by-mobile/{mobile}", response_model=list[OTPVerificationResponse])
+async def get_otp_by_mobile(
+    mobile: str,
+    db: Session = Depends(get_db),
+):
+    """Get all OTP verification records for a specific mobile number"""
+    otp_records = db.query(OTPVerification).filter(
+        OTPVerification.mobile == mobile
+    ).order_by(OTPVerification.created_at.desc()).all()
+    
+    if not otp_records:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No OTP records found for this mobile number"
+        )
+    
+    return otp_records
+
+
+@otp_verification_router.get("/{id}", response_model=OTPVerificationResponse)
+async def get_otp_verification(
+    id: UUID,
+    db: Session = Depends(get_db),
+):
+    """Get a specific OTP verification record by ID"""
+    otp_verification = db.query(OTPVerification).filter(OTPVerification.id == id).first()
+    if not otp_verification:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="OTP verification record not found"
+        )
+    return otp_verification
+
+
+@otp_verification_router.put("/{id}", response_model=OTPVerificationResponse)
+async def update_otp_verification(
+    id: UUID,
+    otp_update: OTPVerificationUpdate,
+    db: Session = Depends(get_db),
+):
+    """Update an OTP verification record"""
+    otp_verification = db.query(OTPVerification).filter(OTPVerification.id == id).first()
+    if not otp_verification:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="OTP verification record not found"
+        )
+    
+    update_data = otp_update.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(otp_verification, key, value)
+    
+    db.commit()
+    db.refresh(otp_verification)
+    return otp_verification
+
+
+@otp_verification_router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_otp_verification(
+    id: UUID,
+    db: Session = Depends(get_db),
+):
+    """Delete an OTP verification record"""
+    otp_verification = db.query(OTPVerification).filter(OTPVerification.id == id).first()
+    if not otp_verification:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="OTP verification record not found"
+        )
+    
+    db.delete(otp_verification)
+    db.commit()
+
+
 router = APIRouter()
 router.include_router(user_router)
 router.include_router(item_router)
@@ -3614,3 +3810,4 @@ router.include_router(invoice_items_router)
 router.include_router(notifications_router)
 router.include_router(search_logs_router)
 router.include_router(symptom_checkers_router)
+router.include_router(otp_verification_router)
