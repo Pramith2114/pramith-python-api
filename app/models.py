@@ -40,7 +40,7 @@ class Doctor(Base):
     __tablename__ = "doctors"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, unique=True, index=True)
     specialization = Column(String(255), nullable=False)
     experience = Column(Integer, nullable=False, default=0)  # Years of experience
     consultation_fee = Column(Numeric(10, 2), nullable=False)  # Decimal for currency

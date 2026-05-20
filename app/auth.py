@@ -54,7 +54,7 @@ async def register_user(
     new_user = User(
         username=user_data.username,
         email=user_data.email,
-        mobile_number=user_data.mobile_number,
+        mobile=user_data.mobile_number,
         password_hash=hash_password(user_data.password),
         is_verified=True  # Mark as verified for username/password auth
     )
@@ -227,7 +227,7 @@ async def verify_otp(
     db.commit()
     
     # Check if user exists
-    user = db.query(User).filter(User.mobile_number == request.mobile_number).first()
+    user = db.query(User).filter(User.mobile == request.mobile_number).first()
     
     if not user:
         # Create new user with mobile number (no email required)

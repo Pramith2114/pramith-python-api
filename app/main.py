@@ -12,6 +12,68 @@ app = FastAPI(
     version=settings.API_VERSION,
 )
 
+# Custom OpenAPI to handle Pydantic forward reference issues
+def custom_openapi():
+    """Custom OpenAPI schema generator that handles Pydantic issues"""
+    if app.openapi_schema:
+        return app.openapi_schema
+    
+    try:
+        from fastapi.openapi.utils import get_openapi
+        openapi_schema = get_openapi(
+            title=app.title,
+            version=app.version,
+            description=app.description,
+            routes=app.routes,
+        )
+        app.openapi_schema = openapi_schema
+        return app.openapi_schema
+    except Exception as e:
+        # If standard generation fails, create a basic schema with route info
+        print(f"⚠️  OpenAPI schema generation issue (non-fatal): {str(e)[:80]}...")
+        
+        # Build a basic but functional OpenAPI schema
+        paths = {}
+        for route in app.routes:
+            if hasattr(route, 'path') and hasattr(route, 'methods'):
+                if route.path.startswith('/api') or route.path in ['/', '/health']:
+                    # Skip internal routes
+                    if any(skip in route.path for skip in ['/openapi', '/docs', '/redoc']):
+                        continue
+                    
+                    path = route.path
+                    if path not in paths:
+                        paths[path] = {}
+                    
+                    for method in route.methods:
+                        if method not in ['HEAD', 'OPTIONS']:  # Skip HEAD/OPTIONS
+                            paths[path][method.lower()] = {
+                                "summary": f"{method} {path}",
+                                "operationId": f"{method.lower()}_{path.replace('/', '_').replace('-', '_').replace('{', '').replace('}', '')}",
+                                "tags": [path.split('/')[2] if len(path.split('/')) > 2 else "default"],
+                                "responses": {
+                                    "200": {"description": "Successful response"},
+                                    "404": {"description": "Not found"},
+                                    "400": {"description": "Bad request"},
+                                    "500": {"description": "Internal server error"}
+                                }
+                            }
+        
+        openapi_schema = {
+            "openapi": "3.1.0",
+            "info": {
+                "title": app.title,
+                "version": app.version
+            },
+            "paths": paths,
+            "components": {"schemas": {}}
+        }
+        
+        app.openapi_schema = openapi_schema
+        return app.openapi_schema
+
+app.openapi = custom_openapi
+
 # Include routes
 app.include_router(router)
 app.include_router(auth_router)

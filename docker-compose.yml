@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  # Main API Service
+  api:
+    build: .
+    container_name: pramith-api
+    ports:
+      - "8000:8000"
+    environment:
+      # AWS RDS Configuration
+      USE_AWS_RDS: ${USE_AWS_RDS:-true}
+      RDS_HOST: ${RDS_HOST}
+      RDS_PORT: ${RDS_PORT:-5432}
+      RDS_DATABASE: ${RDS_DATABASE:-postgres}
+      RDS_USERNAME: ${RDS_USERNAME}
+      RDS_PASSWORD: ${RDS_PASSWORD}
+      AWS_REGION: ${AWS_REGION:-eu-north-1}
+      USE_IAM_AUTH: ${USE_IAM_AUTH:-false}
+      
+      # Alternative: Direct Database URL
+      DATABASE_URL: ${DATABASE_URL}
+      
+      # API Config
+      API_TITLE: "Pramith Python API"
+      API_VERSION: "0.1.0"
+    volumes:
+      - .:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - pramith-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Test Service (runs tests against the API)
+  tests:
+    build: .
+    container_name: pramith-tests
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      USE_AWS_RDS: ${USE_AWS_RDS:-true}
+      RDS_HOST: ${RDS_HOST}
+      RDS_PORT: ${RDS_PORT:-5432}
+      RDS_DATABASE: ${RDS_DATABASE:-postgres}
+      RDS_USERNAME: ${RDS_USERNAME}
+      RDS_PASSWORD: ${RDS_PASSWORD}
+      AWS_REGION: ${AWS_REGION:-eu-north-1}
+      DATABASE_URL: ${DATABASE_URL}
+      API_BASE_URL: "http://api:8000"
+    volumes:
+      - .:/app
+    command: pytest -v --tb=short
+    networks:
+      - pramith-network
+    profiles:
+      - test
+
+  # Helper service for posting a user via environment variables
+  post_user:
+    build: .
+    container_name: pramith-post-user
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      API_URL: ${API_URL:-http://api:8000/api/users}
+      USER_NAME: ${USER_NAME:-Alice Smith}
+      USER_MOBILE: ${USER_MOBILE:-+919876543211}
+      USER_EMAIL: ${USER_EMAIL:-alice@example.com}
+      USER_PASSWORD: ${USER_PASSWORD:-password123}
+      USER_ROLE: ${USER_ROLE:-patient}
+    volumes:
+      - .:/app
+    entrypoint: ["/app/post_user.sh"]
+    networks:
+      - pramith-network
+
+networks:
+  pramith-network:
+    driver: bridge
