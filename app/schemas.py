@@ -1,8 +1,9 @@
 """
 Pydantic schemas for request/response validation
 """
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 from datetime import datetime, date
+from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
@@ -66,9 +67,31 @@ class UserInDB(UserResponse):
 # ============================================================
 
 class LoginRequest(BaseModel):
-    """Schema for username/password login"""
-    username: str
-    password: str
+    """Schema for email/mobile/username and password login."""
+    identifier: Optional[str] = Field(default=None, description="Email address, mobile number, or legacy username")
+    email: Optional[EmailStr] = Field(default=None, description="Email address")
+    mobile: Optional[str] = Field(default=None, description="Mobile number")
+    username: Optional[str] = Field(default=None, description="Legacy username alias")
+    password: str = Field(..., min_length=1, description="User password")
+
+    @model_validator(mode='before')
+    @classmethod
+    def normalize_identifier(cls, values):
+        """Accept email/password, mobile/password, username/password, or legacy identifier payloads."""
+        if isinstance(values, dict):
+            data = dict(values)
+
+            if not data.get('identifier'):
+                if data.get('email'):
+                    data['identifier'] = data['email']
+                elif data.get('mobile'):
+                    data['identifier'] = data['mobile']
+                elif data.get('username'):
+                    data['identifier'] = data['username']
+
+            return data
+
+        return values
 
 
 class LoginResponse(BaseModel):

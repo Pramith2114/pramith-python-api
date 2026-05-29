@@ -63,7 +63,49 @@ access_token = result["access_token"]
 print(f"✓ User logged in successfully\n")
 
 # ============================================================
-# Test 3: Request OTP for Mobile Number
+# Test 3: Login with email/password body
+# ============================================================
+
+email_password_login_data = {
+    "email": "john@example.com",
+    "password": "SecurePass123!"
+}
+
+email_password_response = client.post("/api/auth/login", json=email_password_login_data)
+print(f"Status Code (email/password login): {email_password_response.status_code}")
+assert email_password_response.status_code == 200, f"Expected 200, got {email_password_response.status_code}"
+print("✓ Email/password-based login works\n")
+
+# ============================================================
+# Test 4: Login with email identifier
+# ============================================================
+
+email_login_data = {
+    "identifier": "john@example.com",
+    "password": "SecurePass123!"
+}
+
+email_response = client.post("/api/auth/login", json=email_login_data)
+print(f"Status Code (email login): {email_response.status_code}")
+assert email_response.status_code == 200, f"Expected 200, got {email_response.status_code}"
+print("✓ Email-based login works\n")
+
+# ============================================================
+# Test 4: Login with mobile identifier
+# ============================================================
+
+mobile_login_data = {
+    "identifier": "+1234567890",
+    "password": "SecurePass123!"
+}
+
+mobile_response = client.post("/api/auth/login", json=mobile_login_data)
+print(f"Status Code (mobile login): {mobile_response.status_code}")
+assert mobile_response.status_code == 200, f"Expected 200, got {mobile_response.status_code}"
+print("✓ Mobile-based login works\n")
+
+# ============================================================
+# Test 5: Request OTP for Mobile Number
 # ============================================================
 print("=" * 60)
 print("Test 3: Request OTP for Mobile Authentication")
@@ -83,7 +125,7 @@ assert response.status_code == 200, f"Expected 200, got {response.status_code}"
 print(f"✓ OTP requested successfully\n")
 
 # ============================================================
-# Test 4: Verify OTP and Login
+# Test 6: Verify OTP and Login
 # ============================================================
 print("=" * 60)
 print("Test 4: Verify OTP and Authenticate")

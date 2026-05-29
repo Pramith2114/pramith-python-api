@@ -2,6 +2,7 @@
 Authentication routes for username/password and OTP-based authentication
 """
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 
@@ -71,20 +72,31 @@ async def login_user(
     db: Session = Depends(get_db)
 ):
     """
-    Login with username and password
-    
-    - **username**: Registered username
+    Login with email, mobile number, or username and password
+
+    - **identifier**: Registered email, mobile number, or legacy username
     - **password**: User password
-    
+
     Returns access token for API requests
     """
-    # Find user by username
-    user = db.query(User).filter(User.username == credentials.username).first()
+    identifier = (credentials.identifier or '').strip()
+    if not identifier:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Identifier is required"
+        )
+
+    normalized_identifier = identifier.casefold()
+    user = db.query(User).filter(
+        (func.lower(User.email) == normalized_identifier) |
+        (User.mobile == identifier) |
+        (func.lower(User.username) == normalized_identifier)
+    ).first()
     
     if not user or not verify_password(credentials.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid username or password"
+            detail="Invalid email/mobile/username or password"
         )
     
     if not user.is_active:
@@ -233,10 +245,12 @@ async def verify_otp(
         # Create new user with mobile number (no email required)
         mobile_clean = request.mobile_number.replace('+', '').replace('-', '')
         user = User(
-            mobile_number=request.mobile_number,
+            mobile=request.mobile_number,
             username=f"mobile_user_{mobile_clean}",
-            email=None,  # No email for mobile-only users
-            is_verified=True
+            email=None,
+            is_verified=True,
+            is_active=True,
+            role='patient'
         )
         db.add(user)
         db.commit()
