@@ -8,9 +8,9 @@ __pycache__/
 
 # Virtual environment
 venv/
-.env/
-.env
-.env.*
+# .env/
+# .env
+# .env.*
 
 # Editor
 .vscode/
