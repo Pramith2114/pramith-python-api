@@ -273,8 +273,18 @@ async def create_doctor(
     
     - **user_id**: UUID of existing user (must have role='doctor')
     - **specialization**: Medical specialization (e.g., Cardiology, Pediatrics)
+    - **profile_picture**: URL to doctor's profile picture
+    - **address**: Clinic or practice address
+    - **city**: Clinic city
+    - **state**: Clinic state
+    - **country**: Clinic country
+    - **about_me**: Doctor biography or description
+    - **working_time**: Working hours or schedule
     - **experience**: Years of experience (non-negative integer)
     - **consultation_fee**: Consultation fee (positive decimal)
+    - **patients**: Number of patients seen
+    - **rating**: Average patient rating (0-5)
+    - **reviews**: Number of reviews
     """
     try:
         # Log incoming payload for debugging
@@ -309,18 +319,62 @@ async def create_doctor(
         # Normalize/validate numeric fields
         experience_val = int(doctor_data.experience)
         consultation_fee_val = float(doctor_data.consultation_fee)
+        patients_val = int(doctor_data.patients or 0)
+        rating_val = float(doctor_data.rating or 0.0)
+        reviews_val = int(doctor_data.reviews or 0)
 
         # Create doctor profile
         db_doctor = Doctor(
             user_id=doctor_data.user_id,
             specialization=doctor_data.specialization,
+            profile_picture=doctor_data.profile_picture,
+            address=doctor_data.address,
+            city=doctor_data.city,
+            state=doctor_data.state,
+            country=doctor_data.country,
+            about_me=doctor_data.about_me,
+            working_time=doctor_data.working_time,
             experience=experience_val,
             consultation_fee=consultation_fee_val,
+            patients=patients_val,
+            rating=rating_val,
+            reviews=reviews_val,
             verification_status='pending'
         )
         db.add(db_doctor)
         db.commit()
         db.refresh(db_doctor)
+
+        # If document info provided in create payload, create a DoctorDocument record
+        try:
+            if getattr(doctor_data, 'file_url', None):
+                doc_type = getattr(doctor_data, 'document_type', None) or 'document'
+                db_document = DoctorDocument(
+                    doctor_id=db_doctor.id,
+                    document_type=doc_type,
+                    file_url=doctor_data.file_url,
+                    verified=False
+                )
+                db.add(db_document)
+                db.commit()
+                db.refresh(db_document)
+                # Attach to response object
+                db_doctor.document_type = db_document.document_type
+                db_doctor.file_url = db_document.file_url
+        except Exception:
+            # Non-fatal: continue returning created doctor
+            pass
+
+        # Attach latest document info if exists (if none created above)
+        try:
+            if not getattr(db_doctor, 'file_url', None):
+                latest_doc = db.query(DoctorDocument).filter(DoctorDocument.doctor_id == db_doctor.id).order_by(DoctorDocument.uploaded_at.desc()).first()
+                if latest_doc:
+                    db_doctor.document_type = latest_doc.document_type
+                    db_doctor.file_url = latest_doc.file_url
+        except Exception:
+            pass
+
         return db_doctor
     except HTTPException:
         raise
@@ -349,6 +403,16 @@ async def get_all_doctors(
         query = query.filter(Doctor.verification_status == verification_status)
     
     doctors = query.offset(skip).limit(limit).all()
+    # Attach latest document info for each doctor
+    for d in doctors:
+        try:
+            latest_doc = db.query(DoctorDocument).filter(DoctorDocument.doctor_id == d.id).order_by(DoctorDocument.uploaded_at.desc()).first()
+            if latest_doc:
+                d.document_type = latest_doc.document_type
+                d.file_url = latest_doc.file_url
+        except Exception:
+            d.document_type = None
+            d.file_url = None
     return doctors
 
 
@@ -364,6 +428,15 @@ async def get_doctor(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Doctor not found"
         )
+    # Attach latest document info
+    try:
+        latest_doc = db.query(DoctorDocument).filter(DoctorDocument.doctor_id == doctor.id).order_by(DoctorDocument.uploaded_at.desc()).first()
+        if latest_doc:
+            doctor.document_type = latest_doc.document_type
+            doctor.file_url = latest_doc.file_url
+    except Exception:
+        doctor.document_type = None
+        doctor.file_url = None
     return doctor
 
 
@@ -379,6 +452,15 @@ async def get_doctor_by_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Doctor profile not found for this user"
         )
+    # Attach latest document info
+    try:
+        latest_doc = db.query(DoctorDocument).filter(DoctorDocument.doctor_id == doctor.id).order_by(DoctorDocument.uploaded_at.desc()).first()
+        if latest_doc:
+            doctor.document_type = latest_doc.document_type
+            doctor.file_url = latest_doc.file_url
+    except Exception:
+        doctor.document_type = None
+        doctor.file_url = None
     return doctor
 
 
@@ -405,10 +487,30 @@ async def update_doctor(
     # Update fields
     if doctor_update.specialization is not None:
         doctor.specialization = doctor_update.specialization
+    if doctor_update.profile_picture is not None:
+        doctor.profile_picture = doctor_update.profile_picture
+    if doctor_update.address is not None:
+        doctor.address = doctor_update.address
+    if doctor_update.city is not None:
+        doctor.city = doctor_update.city
+    if doctor_update.state is not None:
+        doctor.state = doctor_update.state
+    if doctor_update.country is not None:
+        doctor.country = doctor_update.country
+    if doctor_update.about_me is not None:
+        doctor.about_me = doctor_update.about_me
+    if doctor_update.working_time is not None:
+        doctor.working_time = doctor_update.working_time
     if doctor_update.experience is not None:
         doctor.experience = doctor_update.experience
     if doctor_update.consultation_fee is not None:
         doctor.consultation_fee = doctor_update.consultation_fee
+    if doctor_update.patients is not None:
+        doctor.patients = doctor_update.patients
+    if doctor_update.rating is not None:
+        doctor.rating = doctor_update.rating
+    if doctor_update.reviews is not None:
+        doctor.reviews = doctor_update.reviews
     
     db.commit()
     db.refresh(doctor)
@@ -512,22 +614,19 @@ async def reject_doctor(
     db.refresh(doctor)
     return doctor
 
-
 # ============================================================
-# Doctor Documents Router (new)
+# Doctor documents under `/api/doctors`
 # ============================================================
 
-doctor_documents_router = APIRouter(prefix="/api/doctor-documents", tags=["doctor-documents"])
 
-
-@doctor_documents_router.post("", response_model=DoctorDocumentResponse, status_code=status.HTTP_201_CREATED)
-async def upload_doctor_document(
+@doctor_router.post("/documents", response_model=DoctorDocumentResponse, status_code=status.HTTP_201_CREATED)
+async def create_doctor_document(
     document: DoctorDocumentCreate,
     db: Session = Depends(get_db),
 ):
     """
-    Upload a new doctor document
-    
+    Upload a new doctor document under the doctors API
+
     - **doctor_id**: UUID of the doctor
     - **document_type**: Type of document (e.g., license, degree, certification)
     - **file_url**: URL to the uploaded file
@@ -535,20 +634,13 @@ async def upload_doctor_document(
     # Check if doctor exists
     doctor = db.query(Doctor).filter(Doctor.id == document.doctor_id).first()
     if not doctor:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Doctor not found"
-        )
-    
-    # Check if user associated with doctor has doctor role
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Doctor not found")
+
+    # Ensure associated user is a doctor
     user = db.query(User).filter(User.id == doctor.user_id).first()
-    if user.role != 'doctor':
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Associated user must have 'doctor' role"
-        )
-    
-    # Create document record
+    if (user.role or '').lower() != 'doctor':
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Associated user must have 'doctor' role")
+
     db_document = DoctorDocument(
         doctor_id=document.doctor_id,
         document_type=document.document_type,
@@ -561,146 +653,96 @@ async def upload_doctor_document(
     return db_document
 
 
-@doctor_documents_router.get("", response_model=list[DoctorDocumentResponse])
-async def get_all_documents(
+@doctor_router.get("/documents", response_model=list[DoctorDocumentResponse])
+async def list_doctor_documents(
     skip: int = 0,
     limit: int = 10,
     doctor_id: UUID = None,
     verified: bool = None,
     db: Session = Depends(get_db),
 ):
-    """
-    Get all doctor documents with optional filtering
-    
-    - **skip**: Number of documents to skip (default: 0)
-    - **limit**: Maximum number of documents to return (default: 10)
-    - **doctor_id**: Filter by specific doctor (optional)
-    - **verified**: Filter by verification status (optional)
-    """
+    """List doctor documents with optional filters"""
     query = db.query(DoctorDocument)
-    
     if doctor_id:
         query = query.filter(DoctorDocument.doctor_id == doctor_id)
-    
     if verified is not None:
         query = query.filter(DoctorDocument.verified == verified)
-    
     documents = query.offset(skip).limit(limit).all()
     return documents
 
 
-@doctor_documents_router.get("/{document_id}", response_model=DoctorDocumentResponse)
-async def get_document(
+@doctor_router.get("/documents/{document_id}", response_model=DoctorDocumentResponse)
+async def get_doctor_document(
     document_id: UUID,
     db: Session = Depends(get_db),
 ):
-    """Get a specific document by ID"""
     document = db.query(DoctorDocument).filter(DoctorDocument.id == document_id).first()
     if not document:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     return document
 
 
-@doctor_documents_router.get("/doctor/{doctor_id}", response_model=list[DoctorDocumentResponse])
-async def get_doctor_documents(
+@doctor_router.get("/{doctor_id}/documents", response_model=list[DoctorDocumentResponse])
+async def get_documents_for_doctor(
     doctor_id: UUID,
     skip: int = 0,
     limit: int = 10,
     db: Session = Depends(get_db),
 ):
-    """Get all documents for a specific doctor"""
-    # Check if doctor exists
     doctor = db.query(Doctor).filter(Doctor.id == doctor_id).first()
     if not doctor:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Doctor not found"
-        )
-    
-    documents = db.query(DoctorDocument).filter(
-        DoctorDocument.doctor_id == doctor_id
-    ).offset(skip).limit(limit).all()
-    
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Doctor not found")
+    documents = db.query(DoctorDocument).filter(DoctorDocument.doctor_id == doctor_id).offset(skip).limit(limit).all()
     return documents
 
 
-@doctor_documents_router.put("/{document_id}", response_model=DoctorDocumentResponse)
-async def update_document(
+@doctor_router.put("/documents/{document_id}", response_model=DoctorDocumentResponse)
+async def update_doctor_document(
     document_id: UUID,
     document_update: DoctorDocumentUpdate,
     db: Session = Depends(get_db),
 ):
-    """
-    Update a doctor document
-    
-    - **document_type**: Update document type (optional)
-    - **file_url**: Update file URL (optional)
-    """
     document = db.query(DoctorDocument).filter(DoctorDocument.id == document_id).first()
     if not document:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document not found"
-        )
-    
-    # Update fields
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     if document_update.document_type is not None:
         document.document_type = document_update.document_type
     if document_update.file_url is not None:
         document.file_url = document_update.file_url
-    
     db.commit()
     db.refresh(document)
     return document
 
 
-@doctor_documents_router.post("/{document_id}/verify", response_model=DoctorDocumentResponse)
-async def verify_document(
+@doctor_router.post("/documents/{document_id}/verify", response_model=DoctorDocumentResponse)
+async def verify_doctor_document(
     document_id: UUID,
     verification: DoctorDocumentVerify,
     db: Session = Depends(get_db),
 ):
-    """
-    Verify or reject a doctor document
-    
-    - **verified**: Set verification status (true/false)
-    """
     document = db.query(DoctorDocument).filter(DoctorDocument.id == document_id).first()
     if not document:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document not found"
-        )
-    
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     document.verified = verification.verified
     db.commit()
     db.refresh(document)
     return document
 
 
-@doctor_documents_router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_document(
+@doctor_router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_doctor_document(
     document_id: UUID,
     db: Session = Depends(get_db),
 ):
-    """Delete a document by ID"""
     document = db.query(DoctorDocument).filter(DoctorDocument.id == document_id).first()
     if not document:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document not found"
-        )
-    
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     db.delete(document)
     db.commit()
 
 
 # ============================================================
-# Drugs Router (new)
-# ============================================================
+
 
 drugs_router = APIRouter(prefix="/api/drugs", tags=["drugs"])
 
@@ -3811,7 +3853,6 @@ router = APIRouter()
 router.include_router(user_router)
 router.include_router(item_router)
 router.include_router(doctor_router)
-router.include_router(doctor_documents_router)
 router.include_router(drugs_router)
 router.include_router(stock_transactions_router)
 router.include_router(vendor_router)

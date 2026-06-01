@@ -229,20 +229,42 @@ class ItemResponse(ItemBase):
 class DoctorBase(BaseModel):
     """Base doctor schema"""
     specialization: str
+    profile_picture: Optional[str] = Field(None, description="URL of the doctor's profile picture")
+    address: Optional[str] = Field(None, description="Doctor's address")
+    city: Optional[str] = Field(None, description="Doctor's city")
+    state: Optional[str] = Field(None, description="Doctor's state")
+    country: Optional[str] = Field(None, description="Doctor's country")
+    about_me: Optional[str] = Field(None, description="Doctor's bio or about section")
+    working_time: Optional[str] = Field(None, description="Doctor's working hours")
     experience: int = Field(..., ge=0, description="Years of experience (non-negative)")
     consultation_fee: float = Field(..., gt=0, description="Consultation fee (must be positive)")
+    patients: int = Field(0, ge=0, description="Number of patients")
+    rating: float = Field(0.0, ge=0.0, le=5.0, description="Average rating from patients")
+    reviews: int = Field(0, ge=0, description="Number of reviews")
 
 
 class DoctorCreate(DoctorBase):
     """Schema for creating a doctor profile"""
     user_id: UUID
+    document_type: Optional[str] = None
+    file_url: Optional[str] = None
 
 
 class DoctorUpdate(BaseModel):
     """Schema for updating a doctor profile"""
     specialization: Optional[str] = None
+    profile_picture: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
+    about_me: Optional[str] = None
+    working_time: Optional[str] = None
     experience: Optional[int] = Field(None, ge=0, description="Years of experience (non-negative)")
     consultation_fee: Optional[float] = Field(None, gt=0, description="Consultation fee (must be positive)")
+    patients: Optional[int] = Field(None, ge=0, description="Number of patients")
+    rating: Optional[float] = Field(None, ge=0.0, le=5.0, description="Average rating from patients")
+    reviews: Optional[int] = Field(None, ge=0, description="Number of reviews")
 
 
 class DoctorVerificationUpdate(BaseModel):
@@ -258,6 +280,8 @@ class DoctorResponse(DoctorBase):
     id: UUID
     user_id: UUID
     verification_status: str
+    document_type: Optional[str] = None
+    file_url: Optional[str] = None
     verified_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
