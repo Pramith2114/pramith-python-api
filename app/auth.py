@@ -40,22 +40,26 @@ async def register_user(
     - **password**: Password (minimum 6 characters)
     - **mobile_number**: Optional mobile number
     """
-    # Check if user already exists
+    # Check if user already exists by username, email, or mobile
     existing_user = db.query(User).filter(
-        (User.username == user_data.username) | (User.email == user_data.email)
+        (User.username == user_data.username) |
+        (User.email == user_data.email) |
+        (User.mobile == (user_data.mobile or user_data.mobile_number))
     ).first()
     
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Username or email already registered"
+            detail="Username, email, or mobile already registered"
         )
     
     # Create new user
     new_user = User(
+        name=user_data.name,
         username=user_data.username,
         email=user_data.email,
-        mobile=user_data.mobile_number,
+        mobile=user_data.mobile or user_data.mobile_number,
+        role=user_data.role,
         password_hash=hash_password(user_data.password),
         is_verified=True  # Mark as verified for username/password auth
     )
