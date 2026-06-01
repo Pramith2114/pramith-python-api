@@ -42,8 +42,18 @@ class Doctor(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, unique=True, index=True)
     specialization = Column(String(255), nullable=False)
+    profile_picture = Column(String(255), nullable=True)
+    address = Column(Text, nullable=True)
+    city = Column(String(100), nullable=True)
+    state = Column(String(100), nullable=True)
+    country = Column(String(100), nullable=True)
+    about_me = Column(Text, nullable=True)
+    working_time = Column(String(255), nullable=True)
     experience = Column(Integer, nullable=False, default=0)  # Years of experience
     consultation_fee = Column(Numeric(10, 2), nullable=False)  # Decimal for currency
+    patients = Column(Integer, nullable=False, default=0)
+    rating = Column(Numeric(3, 2), nullable=False, default=0.0)
+    reviews = Column(Integer, nullable=False, default=0)
     verification_status = Column(String(50), nullable=False, default='pending')  # pending, approved, rejected
     verified_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
