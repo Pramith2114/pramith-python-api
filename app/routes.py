@@ -8,12 +8,13 @@ from datetime import datetime
 import bcrypt
 
 from app.database import get_db
-from app.models import User, Item, Doctor, DoctorDocument, Drug, StockTransaction, Vendor, VendorOrder, Appointment, Prescription, PrescriptionItem, MedicalRecord, Payment, Invoice, InvoiceItem, Notification, SearchLog, SymptomChecker, OTPVerification
+from app.models import User, Item, Doctor, DoctorDocument, DoctorCategory, Drug, StockTransaction, Vendor, VendorOrder, Appointment, Prescription, PrescriptionItem, MedicalRecord, Payment, Invoice, InvoiceItem, Notification, SearchLog, SymptomChecker, OTPVerification
 from app.schemas import (
     UserCreate, UserResponse, UserUpdate, UserInDB, 
     ItemCreate, ItemResponse,
     DoctorCreate, DoctorResponse, DoctorUpdate, DoctorDetailResponse, DoctorVerificationUpdate,
     DoctorDocumentCreate, DoctorDocumentResponse, DoctorDocumentUpdate, DoctorDocumentVerify,
+    DoctorCategoryCreate, DoctorCategoryResponse,
     DrugCreate, DrugResponse, DrugUpdate,
     StockTransactionCreate, StockTransactionResponse, StockTransactionUpdate, StockTransactionDetailResponse,
     VendorCreate, VendorResponse, VendorUpdate,
@@ -742,6 +743,65 @@ async def delete_doctor_document(
 
 
 # ============================================================
+
+# ============================================================
+# Doctor Categories Router
+# ============================================================
+
+doctor_categories_router = APIRouter(prefix="/api/doctor-categories", tags=["doctor-categories"])
+
+
+@doctor_categories_router.post("/bulk", response_model=list[DoctorCategoryResponse], status_code=status.HTTP_201_CREATED)
+async def bulk_create_doctor_categories(
+    categories: list[DoctorCategoryCreate],
+    db: Session = Depends(get_db),
+):
+    """Create or update multiple doctor categories in bulk"""
+    created = []
+    for cat in categories:
+        try:
+            # Try find by id first if provided
+            existing = None
+            if getattr(cat, 'id', None):
+                existing = db.query(DoctorCategory).filter(DoctorCategory.id == cat.id).first()
+            if not existing:
+                existing = db.query(DoctorCategory).filter(DoctorCategory.label == cat.label).first()
+
+            if existing:
+                existing.icon = cat.icon
+                existing.color = cat.color
+                db.commit()
+                db.refresh(existing)
+                created.append(existing)
+            else:
+                new_cat = DoctorCategory(
+                    id=cat.id if getattr(cat, 'id', None) else None,
+                    label=cat.label,
+                    icon=cat.icon,
+                    color=cat.color
+                )
+                db.add(new_cat)
+                db.commit()
+                db.refresh(new_cat)
+                created.append(new_cat)
+        except Exception:
+            db.rollback()
+            continue
+
+    return created
+
+
+@doctor_categories_router.get("", response_model=list[DoctorCategoryResponse])
+async def list_doctor_categories(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+):
+    query = db.query(DoctorCategory).offset(skip).limit(limit).all()
+    return query
+
+# ============================================================
+
 
 
 drugs_router = APIRouter(prefix="/api/drugs", tags=["drugs"])
@@ -3853,6 +3913,7 @@ router = APIRouter()
 router.include_router(user_router)
 router.include_router(item_router)
 router.include_router(doctor_router)
+router.include_router(doctor_categories_router)
 router.include_router(drugs_router)
 router.include_router(stock_transactions_router)
 router.include_router(vendor_router)
