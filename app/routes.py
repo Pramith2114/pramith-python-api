@@ -276,41 +276,57 @@ async def create_doctor(
     - **experience**: Years of experience (non-negative integer)
     - **consultation_fee**: Consultation fee (positive decimal)
     """
-    # Check if user exists
-    user = db.query(User).filter(User.id == doctor_data.user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+    try:
+        # Log incoming payload for debugging
+        try:
+            print("[doctors.create] incoming:", doctor_data.model_dump() if hasattr(doctor_data, 'model_dump') else dict(doctor_data))
+        except Exception:
+            print("[doctors.create] incoming: <could not serialize>")
+
+        # Check if user exists
+        user = db.query(User).filter(User.id == doctor_data.user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        # Optionally check if user has doctor role
+        if (user.role or '').lower() != 'doctor':
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User must have 'doctor' role"
+            )
+
+        # Check if doctor profile already exists
+        existing_doctor = db.query(Doctor).filter(Doctor.user_id == doctor_data.user_id).first()
+        if existing_doctor:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Doctor profile already exists for this user"
+            )
+
+        # Normalize/validate numeric fields
+        experience_val = int(doctor_data.experience)
+        consultation_fee_val = float(doctor_data.consultation_fee)
+
+        # Create doctor profile
+        db_doctor = Doctor(
+            user_id=doctor_data.user_id,
+            specialization=doctor_data.specialization,
+            experience=experience_val,
+            consultation_fee=consultation_fee_val,
+            verification_status='pending'
         )
-    
-    # Optionally check if user has doctor role
-    if user.role != 'doctor':
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User must have 'doctor' role"
-        )
-    
-    # Check if doctor profile already exists
-    existing_doctor = db.query(Doctor).filter(Doctor.user_id == doctor_data.user_id).first()
-    if existing_doctor:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Doctor profile already exists for this user"
-        )
-    
-    # Create doctor profile
-    db_doctor = Doctor(
-        user_id=doctor_data.user_id,
-        specialization=doctor_data.specialization,
-        experience=doctor_data.experience,
-        consultation_fee=doctor_data.consultation_fee,
-        verification_status='pending'
-    )
-    db.add(db_doctor)
-    db.commit()
-    db.refresh(db_doctor)
-    return db_doctor
+        db.add(db_doctor)
+        db.commit()
+        db.refresh(db_doctor)
+        return db_doctor
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[doctors.create] unexpected error: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
 @doctor_router.get("", response_model=list[DoctorResponse])

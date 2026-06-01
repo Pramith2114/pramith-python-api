@@ -235,7 +235,7 @@ class DoctorBase(BaseModel):
 
 class DoctorCreate(DoctorBase):
     """Schema for creating a doctor profile"""
-    user_id: int
+    user_id: UUID
 
 
 class DoctorUpdate(BaseModel):
@@ -256,7 +256,7 @@ class DoctorVerificationUpdate(BaseModel):
 class DoctorResponse(DoctorBase):
     """Schema for doctor response"""
     id: UUID
-    user_id: int
+    user_id: UUID
     verification_status: str
     verified_at: Optional[datetime] = None
     created_at: datetime
