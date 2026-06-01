@@ -12,7 +12,7 @@ from app.models import User, Item, Doctor, DoctorDocument, DoctorCategory, Drug,
 from app.schemas import (
     UserCreate, UserResponse, UserUpdate, UserInDB, 
     ItemCreate, ItemResponse,
-    DoctorCreate, DoctorResponse, DoctorUpdate, DoctorDetailResponse, DoctorVerificationUpdate,
+    DoctorCreate, DoctorResponse, DoctorUpdate, DoctorDetailResponse, DoctorWithUserInfoResponse, DoctorVerificationUpdate,
     DoctorDocumentCreate, DoctorDocumentResponse, DoctorDocumentUpdate, DoctorDocumentVerify,
     DoctorCategoryCreate, DoctorCategoryResponse,
     DrugCreate, DrugResponse, DrugUpdate,
@@ -384,7 +384,7 @@ async def create_doctor(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-@doctor_router.get("", response_model=list[DoctorResponse])
+@doctor_router.get("", response_model=list[DoctorWithUserInfoResponse])
 async def get_all_doctors(
     skip: int = 0,
     limit: int = 10,
@@ -392,20 +392,28 @@ async def get_all_doctors(
     db: Session = Depends(get_db),
 ):
     """
-    Get all doctors with optional filtering
+    Get all doctors with optional filtering and flattened user information
     
     - **skip**: Number of doctors to skip (default: 0)
     - **limit**: Maximum number of doctors to return (default: 10)
     - **verification_status**: Filter by status (pending, approved, rejected)
+    
+    Returns doctor details with user information (name, email, mobile, role) flattened at the same level
     """
-    query = db.query(Doctor)
+    query = db.query(Doctor).join(User, Doctor.user_id == User.id)
     
     if verification_status:
         query = query.filter(Doctor.verification_status == verification_status)
     
     doctors = query.offset(skip).limit(limit).all()
-    # Attach latest document info for each doctor
+    
+    # Build response with flattened user details and document info
+    result = []
     for d in doctors:
+        # Fetch user information
+        user = db.query(User).filter(User.id == d.user_id).first()
+        
+        # Attach latest document info for each doctor
         try:
             latest_doc = db.query(DoctorDocument).filter(DoctorDocument.doctor_id == d.id).order_by(DoctorDocument.uploaded_at.desc()).first()
             if latest_doc:
@@ -414,7 +422,17 @@ async def get_all_doctors(
         except Exception:
             d.document_type = None
             d.file_url = None
-    return doctors
+        
+        # Flatten user information onto doctor object
+        if user:
+            d.name = user.name
+            d.email = user.email
+            d.mobile = user.mobile
+            d.role = user.role
+        
+        result.append(d)
+    
+    return result
 
 
 @doctor_router.get("/{doctor_id}", response_model=DoctorResponse)

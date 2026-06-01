@@ -298,6 +298,27 @@ class DoctorDetailResponse(DoctorResponse):
         from_attributes = True
 
 
+class DoctorWithUserInfoResponse(DoctorBase):
+    """Doctor response with flattened user information"""
+    id: UUID
+    user_id: UUID
+    verification_status: str
+    # User information fields (flattened)
+    name: Optional[str] = None
+    email: Optional[str] = None
+    mobile: Optional[str] = None
+    role: Optional[str] = None
+    # Document information
+    document_type: Optional[str] = None
+    file_url: Optional[str] = None
+    verified_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
 # ============================================================
 # Doctor Document Schemas (new)
 # ============================================================

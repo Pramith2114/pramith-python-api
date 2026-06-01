@@ -8,6 +8,7 @@ Usage:
 This will execute ALTER TABLE IF NOT EXISTS statements and is idempotent.
 """
 from app.database import engine
+from sqlalchemy import text
 
 DDL_STATEMENTS = [
     "ALTER TABLE doctors ADD COLUMN IF NOT EXISTS profile_picture VARCHAR(255);",
@@ -28,7 +29,7 @@ def run():
     with engine.connect() as conn:
         for ddl in DDL_STATEMENTS:
             print("Executing:", ddl)
-            conn.execute(ddl)
+            conn.execute(text(ddl))
         # Some DB drivers require explicit commit for DDL; use begin
         try:
             conn.commit()
