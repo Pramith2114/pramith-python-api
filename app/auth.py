@@ -53,16 +53,30 @@ async def register_user(
             detail="Username, email, or mobile already registered"
         )
     
-    # Create new user
+    # Validate role to avoid invalid values slipping through
+    allowed_roles = {"patient", "doctor", "admin", "vendor"}
+    role_value = (user_data.role or "patient").lower()
+    if role_value not in allowed_roles:
+        role_value = "patient"
+
     new_user = User(
         name=user_data.name,
         username=user_data.username,
         email=user_data.email,
         mobile=user_data.mobile or user_data.mobile_number,
-        role=user_data.role,
+        role=role_value,
         password_hash=hash_password(user_data.password),
         is_verified=True  # Mark as verified for username/password auth
     )
+
+    # Debug logging to help trace missing fields in deployed environments
+    try:
+        print("[auth.register] incoming_user_data:", user_data.model_dump() if hasattr(user_data, 'model_dump') else dict(user_data))
+    except Exception:
+        try:
+            print("[auth.register] incoming_user_data (fallback):", dict(user_data))
+        except Exception:
+            print("[auth.register] incoming_user_data: <could not serialize>")
     
     db.add(new_user)
     db.commit()
