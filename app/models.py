@@ -77,6 +77,17 @@ class DoctorDocument(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class DoctorCategory(Base):
+    """Doctor category lookup table (e.g., Cardiology, Pediatrics)"""
+    __tablename__ = "doctor_categories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    label = Column(String(255), nullable=False, unique=True)
+    icon = Column(String(50), nullable=True)
+    color = Column(String(20), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Drug(Base):
     """Drug/Medicine model for pharmacy management"""
     __tablename__ = "drugs"

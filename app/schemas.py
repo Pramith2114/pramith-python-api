@@ -336,6 +336,24 @@ class DoctorDocumentResponse(DoctorDocumentBase):
         from_attributes = True
 
 
+class DoctorCategoryBase(BaseModel):
+    label: str
+    icon: Optional[str] = None
+    color: Optional[str] = None
+
+
+class DoctorCategoryCreate(DoctorCategoryBase):
+    id: Optional[int] = None
+
+
+class DoctorCategoryResponse(DoctorCategoryBase):
+    id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 # ============================================================
 # Drug Schemas (new)
 # ============================================================
