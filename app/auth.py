@@ -53,11 +53,14 @@ async def register_user(
             detail="Username, email, or mobile already registered"
         )
     
-    # Validate role to avoid invalid values slipping through
-    allowed_roles = {"patient", "doctor", "admin", "vendor"}
-    role_value = (user_data.role or "patient").lower()
+    # Validate role explicitly so the requested value is preserved, and invalid roles fail clearly.
+    allowed_roles = {"patient", "doctor", "admin", "vendor", "medical"}
+    role_value = (user_data.role or "patient").strip().lower()
     if role_value not in allowed_roles:
-        role_value = "patient"
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid role '{user_data.role}'. Allowed roles: {', '.join(sorted(allowed_roles))}"
+        )
 
     new_user = User(
         name=user_data.name,

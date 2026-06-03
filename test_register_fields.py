@@ -39,3 +39,24 @@ def test_register_persists_name_and_role():
     assert user.name == 'priya', f"DB name mismatch: {user.name}"
     assert user.role == 'doctor', f"DB role mismatch: {user.role}"
     db.close()
+
+
+def test_register_preserves_medical_role():
+    payload = {
+        "name": "medical user",
+        "mobile": "9876543213",
+        "email": "medical@example.com",
+        "role": "medical",
+        "password": "medical123",
+        "username": "medical_user",
+        "mobile_number": "9876543213"
+    }
+
+    resp = client.post("/api/auth/register", json=payload)
+    assert resp.status_code == 201, resp.text
+
+    db = SessionLocal()
+    user = db.query(User).filter(User.username == 'medical_user').first()
+    assert user is not None
+    assert user.role == 'medical', f"Expected role 'medical', got {user.role}"
+    db.close()

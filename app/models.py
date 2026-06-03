@@ -21,7 +21,7 @@ class User(Base):
     mobile = Column(String(20), unique=True, index=True, nullable=True)
     email = Column(String(255), nullable=True)
     password_hash = Column(Text, nullable=True)
-    role = Column(String(50), nullable=False, default='patient')  # patient, doctor, admin, vendor
+    role = Column(String(50), nullable=False, default='patient')  # patient, doctor, admin, vendor, medical
     is_verified = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     
@@ -31,7 +31,7 @@ class User(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     __table_args__ = (
-        CheckConstraint("role IN ('patient', 'doctor', 'admin', 'vendor')", name='valid_role'),
+        CheckConstraint("role IN ('patient', 'doctor', 'admin', 'vendor', 'medical')", name='valid_role'),
     )
 
 

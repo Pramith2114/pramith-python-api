@@ -13,7 +13,7 @@ class UserBase(BaseModel):
     name: Optional[str] = None
     mobile: Optional[str] = None
     email: Optional[str] = None
-    role: str = Field(default="patient", description="User role: patient, doctor, admin, vendor")
+    role: str = Field(default="patient", description="User role: patient, doctor, admin, vendor, medical")
 
 
 class UserCreate(BaseModel):
@@ -22,7 +22,7 @@ class UserCreate(BaseModel):
     name: Optional[str] = None
     mobile: Optional[str] = None
     email: Optional[str] = None
-    role: str = Field(default="patient", description="User role: patient, doctor, admin, vendor")
+    role: str = Field(default="patient", description="User role: patient, doctor, admin, vendor, medical")
     password: str = Field(..., min_length=6, description="Password must be at least 6 characters")
     
     # Legacy authentication fields
