@@ -6,11 +6,9 @@ import pytest
 from uuid import uuid4, UUID
 from datetime import datetime
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from app.main import app
 
 # These imports would work with your actual app structure
-# from app.main import app
 # from app.models import Base, User, Notification
 # from app.database import get_db
 
@@ -23,9 +21,8 @@ class TestNotificationsAPI:
     @pytest.fixture
     def client(self):
         """Setup test client"""
-        # This would initialize your test client
-        # return TestClient(app)
-        pass
+        with TestClient(app) as client:
+            yield client
     
     @pytest.fixture
     def test_user_id(self):

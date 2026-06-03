@@ -584,7 +584,7 @@ class AppointmentResponse(AppointmentBase):
 class AppointmentDetailResponse(AppointmentResponse):
     """Extended appointment response with patient and doctor details"""
     patient: Optional[UserResponse] = None
-    doctor: Optional[DoctorResponse] = None
+    doctor: Optional[DoctorDetailResponse] = None
     
     class Config:
         from_attributes = True

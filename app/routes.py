@@ -1514,7 +1514,35 @@ async def delete_vendor_order(
 appointment_router = APIRouter(prefix="/api/appointments", tags=["appointments"])
 
 
-@appointment_router.post("", response_model=AppointmentResponse, status_code=status.HTTP_201_CREATED)
+def serialize_appointment_detail(db: Session, appointment: Appointment) -> AppointmentDetailResponse:
+    """Build an appointment detail response with patient and doctor details."""
+    patient = db.query(User).filter(User.id == appointment.patient_id).first()
+    doctor_record = db.query(Doctor).filter(Doctor.id == appointment.doctor_id).first()
+    doctor_user = None
+
+    if doctor_record:
+        doctor_user = db.query(User).filter(User.id == doctor_record.user_id).first()
+
+    doctor_detail = DoctorDetailResponse.from_orm(doctor_record) if doctor_record else None
+    if doctor_detail:
+        doctor_detail.user = doctor_user
+
+    return AppointmentDetailResponse(
+        id=appointment.id,
+        patient_id=appointment.patient_id,
+        doctor_id=appointment.doctor_id,
+        appointment_date=str(appointment.appointment_date),
+        time_slot=appointment.time_slot,
+        status=appointment.status,
+        notes=appointment.notes,
+        patient=patient,
+        doctor=doctor_detail,
+        created_at=appointment.created_at,
+        updated_at=appointment.updated_at,
+    )
+
+
+@appointment_router.post("", response_model=AppointmentDetailResponse, status_code=status.HTTP_201_CREATED)
 async def create_appointment(
     appointment: AppointmentCreate,
     db: Session = Depends(get_db),
@@ -1565,10 +1593,10 @@ async def create_appointment(
     db.add(db_appointment)
     db.commit()
     db.refresh(db_appointment)
-    return db_appointment
+    return serialize_appointment_detail(db, db_appointment)
 
 
-@appointment_router.get("", response_model=list[AppointmentResponse])
+@appointment_router.get("", response_model=list[AppointmentDetailResponse])
 async def get_all_appointments(
     skip: int = 0,
     limit: int = 10,
@@ -1603,7 +1631,7 @@ async def get_all_appointments(
         query = query.filter(Appointment.appointment_date == appointment_date)
     
     appointments = query.offset(skip).limit(limit).all()
-    return appointments
+    return [serialize_appointment_detail(db, appointment) for appointment in appointments]
 
 
 @appointment_router.get("/{appointment_id}", response_model=AppointmentDetailResponse)
@@ -1618,10 +1646,10 @@ async def get_appointment(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Appointment not found"
         )
-    return appointment
+    return serialize_appointment_detail(db, appointment)
 
 
-@appointment_router.get("/patient/{patient_id}", response_model=list[AppointmentResponse])
+@appointment_router.get("/patient/{patient_id}", response_model=list[AppointmentDetailResponse])
 async def get_patient_appointments(
     patient_id: UUID,
     skip: int = 0,
@@ -1651,10 +1679,10 @@ async def get_patient_appointments(
         query = query.filter(Appointment.status == status)
     
     appointments = query.offset(skip).limit(limit).all()
-    return appointments
+    return [serialize_appointment_detail(db, appointment) for appointment in appointments]
 
 
-@appointment_router.get("/doctor/{doctor_id}", response_model=list[AppointmentResponse])
+@appointment_router.get("/doctor/{doctor_id}", response_model=list[AppointmentDetailResponse])
 async def get_doctor_appointments(
     doctor_id: UUID,
     skip: int = 0,
@@ -1689,296 +1717,39 @@ async def get_doctor_appointments(
         query = query.filter(Appointment.appointment_date == appointment_date)
     
     appointments = query.offset(skip).limit(limit).all()
-    return appointments
+    return [serialize_appointment_detail(db, appointment) for appointment in appointments]
 
 
-@appointment_router.put("/{appointment_id}", response_model=AppointmentResponse)
-async def update_appointment(
-    appointment_id: UUID,
-    appointment_update: AppointmentUpdate,
-    db: Session = Depends(get_db),
-):
-    """
-    Update appointment information
-    
-    - **appointment_date**: New appointment date (optional)
-    - **time_slot**: New time slot (optional)
-    - **status**: New status (optional)
-    - **notes**: Additional notes (optional)
-    """
-    appointment = db.query(Appointment).filter(Appointment.id == appointment_id).first()
-    if not appointment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Appointment not found"
-        )
-    
-    # Validate status if provided
-    if appointment_update.status:
-        valid_statuses = ['scheduled', 'completed', 'cancelled', 'no-show', 'rescheduled']
-        if appointment_update.status not in valid_statuses:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Status must be one of: {', '.join(valid_statuses)}"
-            )
-    
-    # Update fields
-    if appointment_update.appointment_date is not None:
-        appointment.appointment_date = appointment_update.appointment_date
-    if appointment_update.time_slot is not None:
-        appointment.time_slot = appointment_update.time_slot
-    if appointment_update.status is not None:
-        appointment.status = appointment_update.status
-    if appointment_update.notes is not None:
-        appointment.notes = appointment_update.notes
-    
-    db.commit()
-    db.refresh(appointment)
-    return appointment
-
-
-@appointment_router.delete("/{appointment_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_appointment(
-    appointment_id: UUID,
-    db: Session = Depends(get_db),
-):
-    """Delete an appointment by ID"""
-    appointment = db.query(Appointment).filter(Appointment.id == appointment_id).first()
-    if not appointment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Appointment not found"
-        )
-    
-    db.delete(appointment)
-    db.commit()
-
-
-@appointment_router.post("/{appointment_id}/cancel", response_model=AppointmentResponse)
-async def cancel_appointment(
-    appointment_id: UUID,
-    db: Session = Depends(get_db),
-):
-    """Cancel an appointment (shorthand endpoint)"""
-    appointment = db.query(Appointment).filter(Appointment.id == appointment_id).first()
-    if not appointment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Appointment not found"
-        )
-    
-    appointment.status = 'cancelled'
-    db.commit()
-    db.refresh(appointment)
-    return appointment
-
-
-@appointment_router.post("/{appointment_id}/complete", response_model=AppointmentResponse)
-async def complete_appointment(
-    appointment_id: UUID,
-    db: Session = Depends(get_db),
-):
-    """Mark an appointment as completed (shorthand endpoint)"""
-    appointment = db.query(Appointment).filter(Appointment.id == appointment_id).first()
-    if not appointment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Appointment not found"
-        )
-    
-    appointment.status = 'completed'
-    db.commit()
-    db.refresh(appointment)
-    return appointment
-
-
-    db.delete(order)
-    db.commit()
-
-
-# ============================================================
-# Appointments Router (new)
-# ============================================================
-
-appointment_router = APIRouter(prefix="/api/appointments", tags=["appointments"])
-
-
-@appointment_router.post("", response_model=AppointmentResponse, status_code=status.HTTP_201_CREATED)
-async def create_appointment(
-    appointment: AppointmentCreate,
-    db: Session = Depends(get_db),
-):
-    """
-    Create a new appointment
-    
-    - **patient_id**: UUID of the patient
-    - **doctor_id**: UUID of the doctor
-    - **appointment_date**: Appointment date (YYYY-MM-DD)
-    - **time_slot**: Time slot (e.g., 09:00-09:30)
-    - **status**: Appointment status (default: scheduled)
-    - **notes**: Additional notes (optional)
-    """
-    # Check if patient exists
-    patient = db.query(User).filter(User.id == appointment.patient_id).first()
-    if not patient:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Patient not found"
-        )
-    
-    # Check if doctor exists
-    doctor = db.query(Doctor).filter(Doctor.id == appointment.doctor_id).first()
-    if not doctor:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Doctor not found"
-        )
-    
-    # Validate status
-    valid_statuses = ['scheduled', 'completed', 'cancelled', 'no-show', 'rescheduled']
-    if appointment.status not in valid_statuses:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Status must be one of: {', '.join(valid_statuses)}"
-        )
-    
-    # Create appointment
-    db_appointment = Appointment(
-        patient_id=appointment.patient_id,
-        doctor_id=appointment.doctor_id,
-        appointment_date=appointment.appointment_date,
-        time_slot=appointment.time_slot,
-        status=appointment.status,
-        notes=appointment.notes
-    )
-    db.add(db_appointment)
-    db.commit()
-    db.refresh(db_appointment)
-    return db_appointment
-
-
-@appointment_router.get("", response_model=list[AppointmentResponse])
-async def get_all_appointments(
+@appointment_router.get("/me/{user_id}", response_model=list[AppointmentDetailResponse])
+async def get_my_appointments(
+    user_id: UUID,
     skip: int = 0,
     limit: int = 10,
-    patient_id: UUID = None,
-    doctor_id: UUID = None,
     status: str = None,
     appointment_date: str = None,
     db: Session = Depends(get_db),
 ):
-    """
-    Get all appointments with optional filtering
-    
-    - **skip**: Number of appointments to skip (default: 0)
-    - **limit**: Maximum number of appointments to return (default: 10)
-    - **patient_id**: Filter by patient ID (optional)
-    - **doctor_id**: Filter by doctor ID (optional)
-    - **status**: Filter by status (optional)
-    - **appointment_date**: Filter by date (YYYY-MM-DD) (optional)
-    """
+    """Get appointments for the logged-in user context (patient or doctor)."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
     query = db.query(Appointment)
-    
-    if patient_id:
-        query = query.filter(Appointment.patient_id == patient_id)
-    
-    if doctor_id:
-        query = query.filter(Appointment.doctor_id == doctor_id)
-    
+    if user.role == "patient":
+        query = query.filter(Appointment.patient_id == user_id)
+    elif user.role == "doctor":
+        query = query.filter(Appointment.doctor_id == user_id)
+    else:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User role must be patient or doctor")
+
     if status:
         query = query.filter(Appointment.status == status)
-    
+
     if appointment_date:
         query = query.filter(Appointment.appointment_date == appointment_date)
-    
+
     appointments = query.offset(skip).limit(limit).all()
-    return appointments
-
-
-@appointment_router.get("/{appointment_id}", response_model=AppointmentDetailResponse)
-async def get_appointment(
-    appointment_id: UUID,
-    db: Session = Depends(get_db),
-):
-    """Get a specific appointment by ID with patient and doctor details"""
-    appointment = db.query(Appointment).filter(Appointment.id == appointment_id).first()
-    if not appointment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Appointment not found"
-        )
-    return appointment
-
-
-@appointment_router.get("/patient/{patient_id}", response_model=list[AppointmentResponse])
-async def get_patient_appointments(
-    patient_id: UUID,
-    skip: int = 0,
-    limit: int = 10,
-    status: str = None,
-    db: Session = Depends(get_db),
-):
-    """
-    Get all appointments for a specific patient
-    
-    - **patient_id**: UUID of the patient
-    - **skip**: Number of appointments to skip (default: 0)
-    - **limit**: Maximum number of appointments to return (default: 10)
-    - **status**: Filter by status (optional)
-    """
-    # Check if patient exists
-    patient = db.query(User).filter(User.id == patient_id).first()
-    if not patient:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Patient not found"
-        )
-    
-    query = db.query(Appointment).filter(Appointment.patient_id == patient_id)
-    
-    if status:
-        query = query.filter(Appointment.status == status)
-    
-    appointments = query.offset(skip).limit(limit).all()
-    return appointments
-
-
-@appointment_router.get("/doctor/{doctor_id}", response_model=list[AppointmentResponse])
-async def get_doctor_appointments(
-    doctor_id: UUID,
-    skip: int = 0,
-    limit: int = 10,
-    status: str = None,
-    appointment_date: str = None,
-    db: Session = Depends(get_db),
-):
-    """
-    Get all appointments for a specific doctor
-    
-    - **doctor_id**: UUID of the doctor
-    - **skip**: Number of appointments to skip (default: 0)
-    - **limit**: Maximum number of appointments to return (default: 10)
-    - **status**: Filter by status (optional)
-    - **appointment_date**: Filter by date (YYYY-MM-DD) (optional)
-    """
-    # Check if doctor exists
-    doctor = db.query(Doctor).filter(Doctor.id == doctor_id).first()
-    if not doctor:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Doctor not found"
-        )
-    
-    query = db.query(Appointment).filter(Appointment.doctor_id == doctor_id)
-    
-    if status:
-        query = query.filter(Appointment.status == status)
-    
-    if appointment_date:
-        query = query.filter(Appointment.appointment_date == appointment_date)
-    
-    appointments = query.offset(skip).limit(limit).all()
-    return appointments
+    return [serialize_appointment_detail(db, appointment) for appointment in appointments]
 
 
 @appointment_router.put("/{appointment_id}", response_model=AppointmentResponse)
