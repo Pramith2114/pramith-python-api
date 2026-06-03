@@ -36,6 +36,35 @@ from app.schemas import (
 # User Router
 # ============================================================
 
+VALID_APPOINTMENT_STATUSES = ('scheduled', 'completed', 'cancelled', 'no-show', 'rescheduled')
+STATUS_ALIASES = {
+    'cancel': 'cancelled',
+    'canceled': 'cancelled',
+    'complete': 'completed',
+    'no_show': 'no-show',
+}
+
+
+def normalize_appointment_status(status: str | None) -> str | None:
+    """Normalize appointment status values and accept common aliases."""
+    if status is None:
+        return None
+
+    normalized = status.strip().lower()
+    return STATUS_ALIASES.get(normalized, normalized)
+
+
+def validate_appointment_status(status: str) -> str:
+    """Validate appointment status and return a normalized value."""
+    normalized = normalize_appointment_status(status)
+    if normalized not in VALID_APPOINTMENT_STATUSES:
+        raise ValueError(
+            f"Invalid status '{status}'. Use one of: {', '.join(VALID_APPOINTMENT_STATUSES)}. "
+            "You can also use 'cancel'/'complete' as shorthand."
+        )
+    return normalized
+
+
 user_router = APIRouter(prefix="/api/users", tags=["users"])
 
 
@@ -1574,12 +1603,13 @@ async def create_appointment(
         )
     
     # Validate status
-    valid_statuses = ['scheduled', 'completed', 'cancelled', 'no-show', 'rescheduled']
-    if appointment.status not in valid_statuses:
+    try:
+        normalized_status = validate_appointment_status(appointment.status)
+    except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Status must be one of: {', '.join(valid_statuses)}"
-        )
+            detail=str(exc)
+        ) from exc
     
     # Create appointment
     db_appointment = Appointment(
@@ -1587,7 +1617,7 @@ async def create_appointment(
         doctor_id=appointment.doctor_id,
         appointment_date=appointment.appointment_date,
         time_slot=appointment.time_slot,
-        status=appointment.status,
+        status=normalized_status,
         notes=appointment.notes
     )
     db.add(db_appointment)
@@ -1602,7 +1632,7 @@ async def get_all_appointments(
     limit: int = 10,
     patient_id: UUID = None,
     doctor_id: UUID = None,
-    status: str = None,
+    status_filter: str = None,
     appointment_date: str = None,
     db: Session = Depends(get_db),
 ):
@@ -1624,8 +1654,15 @@ async def get_all_appointments(
     if doctor_id:
         query = query.filter(Appointment.doctor_id == doctor_id)
     
-    if status:
-        query = query.filter(Appointment.status == status)
+    if status_filter is not None:
+        try:
+            normalized_status = validate_appointment_status(status_filter)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc)
+            ) from exc
+        query = query.filter(Appointment.status == normalized_status)
     
     if appointment_date:
         query = query.filter(Appointment.appointment_date == appointment_date)
@@ -1654,7 +1691,7 @@ async def get_patient_appointments(
     patient_id: UUID,
     skip: int = 0,
     limit: int = 10,
-    status: str = None,
+    status_filter: str = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -1675,8 +1712,15 @@ async def get_patient_appointments(
     
     query = db.query(Appointment).filter(Appointment.patient_id == patient_id)
     
-    if status:
-        query = query.filter(Appointment.status == status)
+    if status_filter is not None:
+        try:
+            normalized_status = validate_appointment_status(status_filter)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc)
+            ) from exc
+        query = query.filter(Appointment.status == normalized_status)
     
     appointments = query.offset(skip).limit(limit).all()
     return [serialize_appointment_detail(db, appointment) for appointment in appointments]
@@ -1687,7 +1731,7 @@ async def get_doctor_appointments(
     doctor_id: UUID,
     skip: int = 0,
     limit: int = 10,
-    status: str = None,
+    status_filter: str = None,
     appointment_date: str = None,
     db: Session = Depends(get_db),
 ):
@@ -1710,8 +1754,15 @@ async def get_doctor_appointments(
     
     query = db.query(Appointment).filter(Appointment.doctor_id == doctor_id)
     
-    if status:
-        query = query.filter(Appointment.status == status)
+    if status_filter is not None:
+        try:
+            normalized_status = validate_appointment_status(status_filter)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc)
+            ) from exc
+        query = query.filter(Appointment.status == normalized_status)
     
     if appointment_date:
         query = query.filter(Appointment.appointment_date == appointment_date)
@@ -1725,7 +1776,7 @@ async def get_my_appointments(
     user_id: UUID,
     skip: int = 0,
     limit: int = 10,
-    status: str = None,
+    status_filter: str = None,
     appointment_date: str = None,
     db: Session = Depends(get_db),
 ):
@@ -1742,8 +1793,15 @@ async def get_my_appointments(
     else:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User role must be patient or doctor")
 
-    if status:
-        query = query.filter(Appointment.status == status)
+    if status_filter is not None:
+        try:
+            normalized_status = validate_appointment_status(status_filter)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc)
+            ) from exc
+        query = query.filter(Appointment.status == normalized_status)
 
     if appointment_date:
         query = query.filter(Appointment.appointment_date == appointment_date)
@@ -1774,21 +1832,24 @@ async def update_appointment(
         )
     
     # Validate status if provided
-    if appointment_update.status:
-        valid_statuses = ['scheduled', 'completed', 'cancelled', 'no-show', 'rescheduled']
-        if appointment_update.status not in valid_statuses:
+    if appointment_update.status is not None:
+        try:
+            normalized_status = validate_appointment_status(appointment_update.status)
+        except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Status must be one of: {', '.join(valid_statuses)}"
-            )
+                detail=str(exc)
+            ) from exc
+    else:
+        normalized_status = None
     
     # Update fields
     if appointment_update.appointment_date is not None:
         appointment.appointment_date = appointment_update.appointment_date
     if appointment_update.time_slot is not None:
         appointment.time_slot = appointment_update.time_slot
-    if appointment_update.status is not None:
-        appointment.status = appointment_update.status
+    if normalized_status is not None:
+        appointment.status = normalized_status
     if appointment_update.notes is not None:
         appointment.notes = appointment_update.notes
     
