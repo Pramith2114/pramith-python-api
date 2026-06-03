@@ -776,12 +776,21 @@ class InvoiceBase(BaseModel):
     user_id: UUID = Field(..., description="UUID of the user")
     total_amount: Decimal = Field(..., description="Total invoice amount")
     status: str = Field(default='draft', description="Invoice status (draft, issued, paid, overdue, cancelled)")
+    items: list[InvoiceItemResponse] = Field(default_factory=list, description="Invoice line items")
 
 
 class InvoiceCreate(BaseModel):
     """Schema for creating an invoice"""
     user_id: UUID = Field(..., description="UUID of the user")
-    total_amount: Decimal = Field(..., description="Total invoice amount")
+    total_amount: Optional[Decimal] = Field(default=None, description="Total invoice amount. If omitted, it is calculated from the provided items.")
+    items: list[InvoiceItemCreate] = Field(default_factory=list, description="Optional invoice line items to create in the same request")
+
+    @model_validator(mode='after')
+    def calculate_total_from_items(self):
+        """Populate total_amount from the nested items when it is omitted."""
+        if self.total_amount is None and self.items:
+            self.total_amount = sum((item.quantity * item.price) for item in self.items)
+        return self
 
 
 class InvoiceUpdate(BaseModel):

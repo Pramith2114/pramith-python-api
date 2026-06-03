@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Body
 from sqlalchemy.orm import Session
 from uuid import UUID
 from datetime import datetime
+from collections import defaultdict
 import bcrypt
 
 from app.database import get_db
@@ -2732,6 +2733,26 @@ async def delete_payment(
 invoices_router = APIRouter(prefix="/api/invoices", tags=["invoices"])
 
 
+def attach_invoice_items(db: Session, invoices):
+    """Attach invoice line items to invoice objects for response serialization."""
+    if isinstance(invoices, list):
+        invoice_ids = [invoice.id for invoice in invoices if getattr(invoice, 'id', None) is not None]
+        if not invoice_ids:
+            return
+
+        items = db.query(InvoiceItem).filter(InvoiceItem.invoice_id.in_(invoice_ids)).all()
+        items_by_invoice = defaultdict(list)
+        for item in items:
+            items_by_invoice[str(item.invoice_id)].append(item)
+
+        for invoice in invoices:
+            invoice.items = items_by_invoice.get(str(invoice.id), [])
+        return
+
+    invoice_items = db.query(InvoiceItem).filter(InvoiceItem.invoice_id == invoices.id).all()
+    invoices.items = invoice_items
+
+
 @invoices_router.post("", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED)
 async def create_invoice(
     invoice: InvoiceCreate,
@@ -2751,15 +2772,33 @@ async def create_invoice(
             detail="User not found"
         )
     
-    # Create invoice
+    total_amount = invoice.total_amount
+    if total_amount is None:
+        total_amount = sum((item.quantity * item.price) for item in invoice.items)
+
     db_invoice = Invoice(
         user_id=invoice.user_id,
-        total_amount=invoice.total_amount,
+        total_amount=total_amount,
         status='draft'
     )
     db.add(db_invoice)
+    db.flush()
+
+    created_items = []
+    for item in invoice.items:
+        db_item = InvoiceItem(
+            invoice_id=db_invoice.id,
+            item_type=item.item_type,
+            item_id=item.item_id,
+            quantity=item.quantity,
+            price=item.price,
+        )
+        db.add(db_item)
+        created_items.append(db_item)
+
     db.commit()
     db.refresh(db_invoice)
+    db_invoice.items = created_items
     return db_invoice
 
 
@@ -2788,6 +2827,7 @@ async def get_all_invoices(
         query = query.filter(Invoice.status == status_filter)
     
     invoices = query.order_by(Invoice.created_at.desc()).offset(skip).limit(limit).all()
+    attach_invoice_items(db, invoices)
     return invoices
 
 
@@ -2804,9 +2844,7 @@ async def get_invoice(
             detail="Invoice not found"
         )
     
-    # Get invoice items
-    items = db.query(InvoiceItem).filter(InvoiceItem.invoice_id == invoice_id).all()
-    invoice.items = items
+    attach_invoice_items(db, invoice)
     return invoice
 
 
@@ -2840,6 +2878,7 @@ async def get_user_invoices(
         query = query.filter(Invoice.status == status_filter)
     
     invoices = query.order_by(Invoice.created_at.desc()).offset(skip).limit(limit).all()
+    attach_invoice_items(db, invoices)
     return invoices
 
 
